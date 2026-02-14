@@ -86,7 +86,7 @@ fuser -k 8000/tcp > /dev/null 2>&1
 
 # Start vLLM with tensor parallelism
 # Optimized for DeepSeek R1 Distill 32B AWQ
-echo "Starting vLLM server..."
+echo "Firing up vLLM... let's rock! 🚀"
 exec python3 -m vllm.entrypoints.openai.api_server \
     --model "$VLLM_MODEL" \
     --served-model-name DeepSeek-R1-Distill-32B-AWQ \
