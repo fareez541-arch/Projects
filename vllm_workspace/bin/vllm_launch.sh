@@ -1,8 +1,8 @@
 #!/bin/bash
-
 #===============================================================================
 # vLLM Launch Script for Dual Navi 31 (gfx1100)
 # ROCm 6.2 Compatibility Configuration - PHASE B FIXES APPLIED
+# NOTE: vLLM must be built from source for ROCm (PyPI wheels are CUDA-only)
 #===============================================================================
 
 # Check Python version before proceeding
@@ -11,8 +11,11 @@ if [[ "$PYTHON_VER" == "3.12" ]]; then
     echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11."
     echo "Please run: conda install python=3.11"
     echo ""
-    echo "Then reinstall PyTorch ROCm with:"
-    echo "pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
+    echo "Then rebuild vLLM from source with:"
+    echo "export VLLM_TARGET_DEVICE=rocm"
+    echo "export PYTORCH_ROCM_ARCH=gfx1100"
+    echo "git clone --branch v0.6.3 --depth 1 https://github.com/vllm-project/vllm.git"
+    echo "cd vllm && python setup.py install"
     exit 1
 fi
 
@@ -25,12 +28,25 @@ if not hasattr(torch.version, 'hip') or torch.version.hip is None:
     exit(1)
 " || exit 1
 
-# Check if vLLM is installed
-if ! python -c "import vllm" 2>/dev/null; then
-    echo "ERROR: vLLM is not installed."
-    echo "Install with: pip install vllm==0.6.3 --extra-index-url https://download.pytorch.org/whl/rocm6.2"
-    exit 1
-fi
+# Check if vLLM is installed and built for ROCm
+python -c "
+import vllm
+import torch
+try:
+    from vllm import _core_C
+    print(f'vLLM {vllm.__version__} ready')
+except ImportError as e:
+    if 'libc10_cuda' in str(e):
+        print('ERROR: vLLM is compiled for CUDA, not ROCm.')
+        print('You must build vLLM from source for ROCm:')
+        print('  export VLLM_TARGET_DEVICE=rocm')
+        print('  export PYTORCH_ROCM_ARCH=gfx1100')
+        print('  git clone --branch v0.6.3 --depth 1 https://github.com/vllm-project/vllm.git')
+        print('  cd vllm && python setup.py install')
+    else:
+        print(f'ERROR: vLLM import failed: {e}')
+    exit(1)
+" || exit 1
 
 # ROCm Environment
 export ROCM_HOME=/opt/rocm-6.2
@@ -66,9 +82,9 @@ TP_SIZE=2
 
 # Launch vLLM Server
 python -m vllm.entrypoints.openai.api_server \
-  --model $MODEL_PATH \
-  --tensor-parallel-size $TP_SIZE \
-  --distributed-executor-backend mp \
-  --quantization awq \
-  --enforce-eager \
-  --port 8000
+    --model $MODEL_PATH \
+    --tensor-parallel-size $TP_SIZE \
+    --distributed-executor-backend mp \
+    --quantization awq \
+    --enforce-eager \
+    --port 8000
