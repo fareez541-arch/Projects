@@ -13,6 +13,15 @@ if [[ "$PYTHON_VER" == "3.12" ]]; then
     exit 1
 fi
 
+# Verify ROCm PyTorch is installed before checking vLLM
+python -c "
+import torch
+if not hasattr(torch.version, 'hip') or torch.version.hip is None:
+    print('ERROR: PyTorch is not the ROCm version.')
+    print('Install with: pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall')
+    exit(1)
+" || exit 1
+
 # Check if vLLM is installed
 if ! python -c "import vllm" 2>/dev/null; then
     echo "ERROR: vLLM is not installed."
