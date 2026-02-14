@@ -1,0 +1,43 @@
+
+---
+
+### Phase Reference
+
+| Phase | File | Purpose |
+|-------|------|---------|
+| 1 | `file_types.txt` | Categorization complete (3 files confirmed, depth issue noted) |
+| 2 | `hardware_env.sh` | Resource validation and dependency check |
+| 3 | `README_AGENT.md` | Agent onboarding and context preservation |
+
+---
+
+### Agent Instructions
+
+**For Future AI Agents:**
+
+1. **Verify Depth:** If `rubrics/`, `scripts/`, or `archive_ccrn_output/` appear empty, run:
+   ```bash
+   find . -maxdepth 4 -type f -exec file --mime-type {} \;
+   ```
+
+2. **Handle Archives:** `migration_upload.zip` contains binary educational assets. Extract to `archive_ccrn_output/` before processing.
+
+3. **Mission Context:** This workspace supports Critical Care Registered Nurse (CCRN) education data migration. Treat `MISSION_MANDATE.md` as the source of truth for educational content standards.
+
+4. **Safety Protocols:**
+   - Do not modify `migration_upload.zip` (immutable source)
+   - Prefer text extraction over binary manipulation
+   - Maintain directory structure in `archive_ccrn_output/`
+
+---
+
+### Current State
+
+- **Categorized:** 3 files (awaiting depth-4 verification)
+- **Hardware:** Profile generated via `hardware_env.sh`
+- **Next Actions:** 
+  1. Verify subdirectory permissions
+  2. Extract `migration_upload.zip` if CRC checks pass
+  3. Index `rubrics/` content
+
+**Context Load:** Ready for expansion upon file verification.
