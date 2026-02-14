@@ -6,10 +6,13 @@
 #===============================================================================
 
 # Check Python version before proceeding
-PYTHON_VER=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+PYTHON_VER=$(python -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 if [[ "$PYTHON_VER" == "3.12" ]]; then
     echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11."
     echo "Please run: conda install python=3.11"
+    echo ""
+    echo "Then reinstall PyTorch ROCm with:"
+    echo "pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
     exit 1
 fi
 
@@ -47,7 +50,7 @@ export VLLM_TARGET_DEVICE=rocm
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 # Memory Allocator Configuration - CRITICAL FIX: expandable segments for 48GB VRAM
-export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb=512
 
 # Performance Tuning - CRITICAL FIX: Fine-grain required for P2P on RDNA3
 export HSA_FORCE_FINE_GRAIN_PCIE=1

@@ -16,12 +16,14 @@ conda activate "$CONDA_ENV_NAME" || {
 }                                                                                          
                                                                                            
 # Check Python version - MUST be 3.11 for vLLM 0.6.3 compatibility                         
-PYTHON_VER=$(python -c 'import sys;                                                        
-print(f"{sys.version_info.major}.{sys.version_info.minor}")')                              
+PYTHON_VER=$(python -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 if [[ "$PYTHON_VER" == "3.12" ]]; then                                                     
-    echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11 due to 'list[int]'  
-schema errors."                                                                            
-    echo "Please downgrade with: conda install python=3.11"                                
+    echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11 due to 'list[int]' schema errors."                                                                            
+    echo "Run this command to fix:"
+    echo "  conda install python=3.11"
+    echo ""
+    echo "Then reinstall PyTorch ROCm with:"
+    echo "  pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
     exit 1                                                                                 
 fi                                                                                         
                                                                                            
@@ -29,6 +31,7 @@ fi
 if pip list 2>/dev/null | grep -q nvidia; then                                             
     echo "ERROR: NVIDIA/CUDA packages detected in environment!"                            
     echo "These are incompatible with AMD GPUs."                                           
+    echo "Fix with: pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
     exit 1                                                                                 
 fi                                                                                         
                                                                                            
@@ -37,12 +40,14 @@ python -c "
 import torch                                                                               
 if not hasattr(torch.version, 'hip') or torch.version.hip is None:                         
     print('ERROR: PyTorch CUDA version detected. Need ROCm version.')                      
+    print('Install with: pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall')
     exit(1)                                                                                
 " || exit 1                                                                                
                                                                                            
 # Check if vLLM is installed                                                               
 if ! python -c "import vllm" 2>/dev/null; then                                             
     echo "ERROR: vLLM is not installed in the current environment."                        
+    echo "Install with: pip install vllm==0.6.3 --extra-index-url https://download.pytorch.org/whl/rocm6.2"
     exit 1                                                                                 
 fi                                                                                         
                                                                                            
@@ -80,4 +85,3 @@ exec python3 -m vllm.entrypoints.openai.api_server \
     --distributed-executor-backend mp \                                                    
     --enforce-eager \                                                                      
     "$@"                                                                             
-
