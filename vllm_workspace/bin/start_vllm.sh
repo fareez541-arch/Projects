@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
 # vLLM Startup Script for Dual AMD Navi 31 (gfx1100) - ROCm 6.2
-# Supports Python 3.11 (native) and Python 3.12 (with compatibility patches)
+# REQUIRES Python 3.11 (Python 3.12 is NOT supported due to type annotation issues)
 # CRITICAL: Builds vLLM from source for ROCm (PyPI wheels are CUDA-only!)
 #===============================================================================
 
@@ -16,14 +16,20 @@ conda activate "$CONDA_ENV_NAME" || {
     exit 1 
 }
 
-# Check Python version
+# Check Python version - MUST BE 3.11
 PYTHON_VER=$(python -c 'import sys; print("{}.{}".format(sys.version_info.major, sys.version_info.minor))')
 
-# Python 3.12 Compatibility Warning
-if [[ "$PYTHON_VER" == "3.12" ]]; then
-    echo "WARNING: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11."
-    echo "Compatibility patches will be applied after build."
+if [[ "$PYTHON_VER" != "3.11" ]]; then
+    echo "ERROR: Python $PYTHON_VER detected. vLLM 0.6.3 requires Python 3.11."
+    echo ""
+    echo "Fix with:"
+    echo "  conda install python=3.11"
+    echo ""
+    echo "Then restart this script."
+    exit 1
 fi
+
+echo "✓ Python 3.11 confirmed"
 
 # Safety Check: Detect CUDA packages in ROCm environment
 if pip list 2>/dev/null | grep -q nvidia; then
@@ -51,7 +57,9 @@ if not hasattr(torch.version, 'hip') or torch.version.hip is None:
     exit(1)
 " || exit 1
 
-# Function to check if vLLM is built for ROCm (not CUDA)
+echo "✓ ROCm PyTorch confirmed"
+
+# Function to check if vLLM is installed and built for ROCm (not CUDA)
 check_vllm_rocm() {
     python -c "
 import vllm
@@ -68,8 +76,8 @@ except ImportError as e:
         print('ERROR: vLLM is compiled for CUDA, not ROCm')
         exit(1)
     else:
-        # Other import error, might be Python 3.12 issue
-        print(f'Import error (might be Python 3.12 compatibility): {e}')
+        # Other import error
+        print(f'ERROR: vLLM import failed: {e}')
         exit(2)
 " 2>&1
     return $?
@@ -111,102 +119,6 @@ build_vllm_from_source() {
     echo "Build completed successfully!"
     cd ~
     rm -rf /tmp/vllm_build
-    
-    # Apply Python 3.12 patches if needed
-    if [[ "$PYTHON_VER" == "3.12" ]]; then
-        apply_python312_patches
-    fi
-}
-
-# Function to apply Python 3.12 compatibility patches
-apply_python312_patches() {
-    echo "Applying Python 3.12 compatibility patches..."
-    
-    VLLM_PATH=$(python -c "import vllm; import os; print(os.path.dirname(vllm.__file__))" 2>/dev/null)
-    if [[ -n "$VLLM_PATH" && -d "$VLLM_PATH" ]]; then
-        echo "Found vLLM at: $VLLM_PATH"
-        
-        # Patch parallel_state.py for list[int] -> List[int]
-        PARALLEL_STATE_FILE="$VLLM_PATH/distributed/parallel_state.py"
-        if [[ -f "$PARALLEL_STATE_FILE" ]]; then
-            # Check if file contains the problematic pattern
-            if grep -q "output_shape: list\[int\]" "$PARALLEL_STATE_FILE"; then
-                echo "Patching parallel_state.py for Python 3.12 compatibility..."
-                [[ -f "$PARALLEL_STATE_FILE.bak" ]] || cp "$PARALLEL_STATE_FILE" "$PARALLEL_STATE_FILE.bak"
-                
-                # Fix: Use correct sed escaping - inside single quotes, \[ means literal [
-                sed -i 's/output_shape: list\[int\]/output_shape: List[int]/g' "$PARALLEL_STATE_FILE"
-                
-                # Check if typing.List import exists, if not add it
-                if ! grep -q "from typing import.*List" "$PARALLEL_STATE_FILE"; then
-                    # Add after existing typing imports or at top
-                    if grep -q "^from typing import" "$PARALLEL_STATE_FILE"; then
-                        # Append List to existing typing import
-                        sed -i 's/^from typing import \(.*\)$/from typing import \1, List/' "$PARALLEL_STATE_FILE"
-                    else
-                        # Add new import at line 1
-                        sed -i '1i from typing import List' "$PARALLEL_STATE_FILE"
-                    fi
-                fi
-                
-                # Verify the patch
-                if grep -q "output_shape: List\[int\]" "$PARALLEL_STATE_FILE"; then
-                    echo "✓ Parallel state patched successfully."
-                else
-                    echo "✗ WARNING: Patch may not have applied correctly"
-                fi
-            else
-                echo "parallel_state.py already patched or doesn't need patching."
-            fi
-        fi
-        
-        # Patch any other files with list[int] annotations in custom op registrations
-        echo "Scanning for other files with list[int] type annotations..."
-        find "$VLLM_PATH" -name "*.py" -type f -exec grep -l "list\[int\]" {} \; 2>/dev/null | while read -r file; do
-            # Skip if already backed up (already patched)
-            [[ -f "$file.bak" ]] && continue
-            
-            # Only patch files that use torch custom ops (which trigger the schema inference)
-            if grep -q "direct_register_custom_op\|torch.library\|@custom_op" "$file" 2>/dev/null; then
-                echo "Patching $(basename "$file") for Python 3.12 compatibility..."
-                cp "$file" "$file.bak"
-                
-                # Replace list[int] with List[int]
-                sed -i 's/list\[int\]/List[int]/g' "$file"
-                
-                # Add typing import if missing
-                if ! grep -q "^from typing import.*List" "$file"; then
-                    if grep -q "^from typing import" "$file"; then
-                        sed -i 's/^from typing import \(.*\)$/from typing import \1, List/' "$file"
-                    else
-                        sed -i '1i from typing import List' "$file"
-                    fi
-                fi
-            fi
-        done
-        
-        # Also check for other problematic built-in generic types
-        find "$VLLM_PATH" -name "*.py" -type f -exec grep -l "dict\[str," {} \; 2>/dev/null | while read -r file; do
-            [[ -f "$file.bak" ]] && continue
-            if grep -q "direct_register_custom_op\|torch.library\|@custom_op" "$file" 2>/dev/null; then
-                echo "Patching $(basename "$file") dict types..."
-                cp "$file" "$file.bak"
-                sed -i 's/dict\[/Dict[/g' "$file"
-                if ! grep -q "^from typing import.*Dict" "$file"; then
-                    if grep -q "^from typing import" "$file"; then
-                        sed -i 's/^from typing import \(.*\)$/from typing import \1, Dict/' "$file"
-                    else
-                        sed -i '1i from typing import Dict' "$file"
-                    fi
-                fi
-            fi
-        done
-        
-        echo "Python 3.12 compatibility patches applied."
-    else
-        echo "ERROR: Could not find vLLM installation path"
-        return 1
-    fi
 }
 
 # Check if vLLM is installed and built for ROCm
@@ -223,24 +135,12 @@ elif [ $VLLM_STATUS -ne 0 ]; then
     build_vllm_from_source
 else
     echo "$VLLM_CHECK"
-    # Check if Python 3.12 patches are needed
-    if [[ "$PYTHON_VER" == "3.12" ]]; then
-        VLLM_PATH=$(python -c "import vllm; import os; print(os.path.dirname(vllm.__file__))" 2>/dev/null)
-        if [[ -f "$VLLM_PATH/distributed/parallel_state.py" ]]; then
-            if grep -q "output_shape: list\[int\]" "$VLLM_PATH/distributed/parallel_state.py"; then
-                echo "Python 3.12 patches needed. Applying..."
-                apply_python312_patches
-            else
-                echo "Python 3.12 patches already applied."
-            fi
-        fi
-    fi
 fi
 
 # Final verification
 echo "Verifying vLLM installation..."
 python -c "import vllm; print(f'vLLM {vllm.__version__} loaded successfully')" || { 
-    echo "ERROR: vLLM import failed after build/patch."
+    echo "ERROR: vLLM import failed after build."
     exit 1 
 }
 
