@@ -1,5 +1,26 @@
 #!/bin/bash
 
+#===============================================================================
+# vLLM Startup Script for Dual AMD Navi 31 (gfx1100) - ROCm 6.2
+#===============================================================================
+
+# Safety Check: Detect CUDA packages in ROCm environment
+if pip list 2>/dev/null | grep -q nvidia; then
+    echo "ERROR: NVIDIA/CUDA packages detected in environment!"
+    echo "These are incompatible with AMD GPUs."
+    echo "Run: ./fix_cuda_mixup.sh"
+    exit 1
+fi
+
+# Verify ROCm PyTorch is installed
+python -c "
+import torch
+if not hasattr(torch.version, 'hip') or torch.version.hip is None:
+    print('ERROR: PyTorch CUDA version detected. Need ROCm version.')
+    print('Run: ./fix_cuda_mixup.sh')
+    exit(1)
+" || exit 1
+
 # Force reload of environment variables for this session
 unset HSA_ENABLE_SDMA  # Clear the incorrect value
 export HSA_ENABLE_SDMA=1
@@ -20,6 +41,14 @@ conda activate "$CONDA_ENV_NAME"
 echo "Environment configured for P2P:"
 env | grep -E "(HSA|RCCL|NCCL)" | sort
 
+# Verify Python version (warn if 3.12 due to vLLM compatibility)
+PYTHON_VER=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [[ "$PYTHON_VER" == "3.12" ]]; then
+    echo "WARNING: Python 3.12 may cause 'list[int]' schema errors with vLLM 0.6.3"
+    echo "If you see ValueError about infer_schema, downgrade to Python 3.11:"
+    echo "  conda install python=3.11"
+fi
+
 # GPU Power/Cleanup
 sudo rocm-smi --setpoweroverdrive 350 -d 0
 sudo rocm-smi --setpoweroverdrive 350 -d 1
@@ -28,6 +57,7 @@ fuser -k 8000/tcp > /dev/null 2>&1
 
 # Start vLLM with tensor parallelism
 # Optimized for DeepSeek R1 Distill 32B AWQ
+echo "Starting vLLM server..."
 exec python3 -m vllm.entrypoints.openai.api_server \
     --model "$VLLM_MODEL" \
     --served-model-name DeepSeek-R1-Distill-32B-AWQ \
