@@ -5,6 +5,21 @@
 # ROCm 6.2 Compatibility Configuration - PHASE B FIXES APPLIED
 #===============================================================================
 
+# Check Python version before proceeding
+PYTHON_VER=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [[ "$PYTHON_VER" == "3.12" ]]; then
+    echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11."
+    echo "Please run: conda install python=3.11"
+    exit 1
+fi
+
+# Check if vLLM is installed
+if ! python -c "import vllm" 2>/dev/null; then
+    echo "ERROR: vLLM is not installed."
+    echo "Install with: pip install vllm==0.6.3 --extra-index-url https://download.pytorch.org/whl/rocm6.2"
+    exit 1
+fi
+
 # ROCm Environment
 export ROCM_HOME=/opt/rocm-6.2
 export PATH=$ROCM_HOME/bin:$PATH
@@ -23,7 +38,7 @@ export VLLM_TARGET_DEVICE=rocm
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 # Memory Allocator Configuration - CRITICAL FIX: expandable segments for 48GB VRAM
-export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb=512
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
 
 # Performance Tuning - CRITICAL FIX: Fine-grain required for P2P on RDNA3
 export HSA_FORCE_FINE_GRAIN_PCIE=1

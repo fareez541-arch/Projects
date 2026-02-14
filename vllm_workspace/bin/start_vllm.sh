@@ -21,6 +21,34 @@ if not hasattr(torch.version, 'hip') or torch.version.hip is None:
     exit(1)
 " || exit 1
 
+# Check Python version - MUST be 3.11 for vLLM 0.6.3 compatibility
+PYTHON_VER=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
+if [[ "$PYTHON_VER" == "3.12" ]]; then
+    echo "ERROR: Python 3.12 detected. vLLM 0.6.3 requires Python 3.11 due to 'list[int]' schema errors."
+    echo "Please downgrade with: conda install python=3.11"
+    exit 1
+fi
+
+# Check if vLLM is installed
+if ! python -c "import vllm" 2>/dev/null; then
+    echo "ERROR: vLLM is not installed in the current environment."
+    echo ""
+    echo "To install ROCm-native vLLM, run:"
+    echo "  conda activate ccrn_agent"
+    echo "  pip install vllm==0.6.3 --extra-index-url https://download.pytorch.org/whl/rocm6.2"
+    echo ""
+    echo "If that installs CUDA dependencies, use instead:"
+    echo "  pip install vllm==0.6.3 --no-deps --force-reinstall"
+    echo ""
+    echo "Also install AutoAWQ (required for your model):"
+    echo "  pip install autoawq==0.2.5 --no-deps"
+    exit 1
+fi
+
+# Verify vLLM version is compatible
+VLLM_VER=$(python -c "import vllm; print(vllm.__version__)" 2>/dev/null)
+echo "Found vLLM version: $VLLM_VER"
+
 # Force reload of environment variables for this session
 unset HSA_ENABLE_SDMA  # Clear the incorrect value
 export HSA_ENABLE_SDMA=1
@@ -38,16 +66,17 @@ source "${SCRIPT_DIR}/../config/p2p_config.env"
 source "$HOME/miniforge3/etc/profile.d/conda.sh"
 conda activate "$CONDA_ENV_NAME"
 
+# Re-verify vLLM is available in activated environment (in case it was installed in base only)
+if ! python -c "import vllm" 2>/dev/null; then
+    echo "ERROR: vLLM not found in activated conda environment: $CONDA_ENV_NAME"
+    echo "Please install vLLM in this environment:"
+    echo "  conda activate $CONDA_ENV_NAME"
+    echo "  pip install vllm==0.6.3 --extra-index-url https://download.pytorch.org/whl/rocm6.2"
+    exit 1
+fi
+
 echo "Environment configured for P2P:"
 env | grep -E "(HSA|RCCL|NCCL)" | sort
-
-# Verify Python version (warn if 3.12 due to vLLM compatibility)
-PYTHON_VER=$(python -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}")')
-if [[ "$PYTHON_VER" == "3.12" ]]; then
-    echo "WARNING: Python 3.12 may cause 'list[int]' schema errors with vLLM 0.6.3"
-    echo "If you see ValueError about infer_schema, downgrade to Python 3.11:"
-    echo "  conda install python=3.11"
-fi
 
 # GPU Power/Cleanup
 sudo rocm-smi --setpoweroverdrive 350 -d 0
