@@ -1,0 +1,13 @@
+
+### Agent Workflow Checklist
+
+- [ ] **Context:** Loaded MISSION_MANDATE.md, ccrn_2026_blueprint.md, ccrn_master_rubric.md
+- [ ] **Hardware:** Verified `rocm_compat_check.py` passes
+- [ ] **Environment:** Sourced `hardware_env.sh` (HSA_OVERRIDE_GFX_VERSION confirmed)
+- [ ] **Tools:** Use [SYSTEM_SCRIPTS] for clinical_ingestion/vision_load (not manual file ops)
+- [ ] **Rubric:** Reference ccrn_master_rubric.md Level 3/4 criteria for "CCRN-Ready" validation
+
+**Failure Mode:** If `HIP_VISIBLE_DEVICES` unset or `rocm_compat_check.py` fails, halt GPU operations and re-source environment.
+
+---
+**Context Load:** ~30%

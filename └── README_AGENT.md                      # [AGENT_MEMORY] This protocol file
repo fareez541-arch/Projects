@@ -1,0 +1,23 @@
+
+### [CORE_KNOWLEDGE] Primary Context Protocol
+
+**Mandatory Load Order for All Future Agents:**
+
+1. **`MISSION_MANDATE.md`** — Primary educational directive
+   - **Purpose:** Defines CCRN certification alignment, 90% pass rate target, 9 content domains (Cardiovascular 20%, Respiratory 18%, Neurological 14%, etc.)
+   - **Use:** Establish learning objectives and clinical judgment frameworks before any educational output
+
+2. **`archive_ccrn_output/ccrn_2026_blueprint.md`** — Examination structure
+   - **Purpose:** 150-item exam blueprint (125 scored), cognitive levels (Apply 50%), detailed pathologies and interventions
+   - **Use:** Reference for exam-specific content weighting and scenario complexity
+
+3. **`scripts/ccrn_master_rubric.md`** — Competency assessment
+   - **Purpose:** 4-level scoring matrix (Novice → Expert/CCRN-Ready), domain-specific criteria for hemodynamics/ventilation/ICP
+   - **Use:** Evaluate clinical scenarios against standardized CCRN readiness levels
+
+**Indexing Rule:** Load [CORE_KNOWLEDGE] before [AGENT_MEMORY]. Never reference `rubrics/` agent behavior files until educational content from the three files above is established.
+
+### Hardware Environment Activation (GFX1100 Dual 7900 XTX)
+
+**Pre-Execution Requirement:** Source environment before any GPU/ML operations:
+

@@ -1,0 +1,8 @@
+
+**Critical Environment Variables:**
+- `HSA_OVERRIDE_GFX_VERSION=11.0.0` (GFX1100 targeting)
+- `RCCL_ENABLE_CLIQUE=1` + `NCCL_P2P_LEVEL=SYS` (PCIe P2P for dual dGPU)
+- `VLLM_WORKER_MULTIPROC_METHOD=spawn` (ROCm multiprocessing fix)
+
+### VLLM Operational Protocol
+
