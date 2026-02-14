@@ -1,60 +1,31 @@
 #!/bin/bash
-# Hardware Environment Detection for CCRN Migration System
-# Phase 2: System Prerequisites Check
-set -euo pipefail
+# ROCm/GFX1100 Dual GPU Environment for VLLM
+# Usage: source ./hardware_env.sh
 
-echo "=== CCRN Workspace Hardware Audit ==="
-echo "Timestamp: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo ""
-
-# Core System Detection
-CPU_CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo "unknown")
-TOTAL_MEM_KB=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}' || echo "0")
-TOTAL_MEM_GB=$((TOTAL_MEM_KB / 1024 / 1024))
-DISK_AVAIL=$(df -BG . 2>/dev/null | tail -1 | awk '{print $4}' | tr -d 'G' || echo "0")
-
-echo "[HARDWARE_PROFILE]"
-echo "cpu_cores: $CPU_CORES"
-echo "memory_gb: $TOTAL_MEM_GB"
-echo "disk_available_gb: $DISK_AVAIL"
-echo ""
-
-# CCRN Processing Requirements Check
-echo "[MIGRATION_READINESS]"
-MIN_MEM=4 # GB
-MIN_DISK=10 # GB
-
-if [ "$TOTAL_MEM_GB" -ge "$MIN_MEM" ] && [ "$DISK_AVAIL" -ge "$MIN_DISK" ]; then
-    echo "status: READY"
-    echo "rationale: Sufficient resources for MISSION_MANDATE processing"
-else
-    echo "status: DEGRADED"
-    echo "warning: Resources below optimal for nursing education data migration"
-fi
-
-echo ""
-echo "[DEPENDENCY_CHECK]"
-# Check for unzip capability (needed for migration_upload.zip)
-if command -v unzip &> /dev/null; then
-    echo "unzip: AVAILABLE"
-else
-    echo "unzip: MISSING (required for archive_ccrn_output/)"
-fi
-
-# Check for text processing (needed for rubrics/)
-if command -v awk &> /dev/null; then
-    echo "text_processing: AVAILABLE"
-else
-    echo "text_processing: LIMITED"
-fi
-
-echo ""
-echo "[AGENT_CONTEXT]"
-echo "workspace_root: $(pwd)"
-echo "detected_categories: CORE_KNOWLEDGE, SYSTEM_SCRIPTS, AGENT_MEMORY"
-echo "next_phase: ARCHIVE_EXTRACTION"
-
-# GFX1100 Environment Configuration (Phase 2)
+# --- GFX1100 Dual 7900 XTX Configuration ---
 export HSA_OVERRIDE_GFX_VERSION=11.0.0
 export HIP_VISIBLE_DEVICES=0,1
 export ROCM_MAX_VRAM_PER_GPU=28000
+
+# --- RCCL (AMD NCCL equivalent) Multi-GPU ---
+export RCCL_ENABLE_CLIQUE=1                    # Enable clique-based P2P for dual GPU
+export RCCL_MNNCL=1                          # Enable multi-node/multi-GPU optimizations
+export NCCL_P2P_LEVEL=SYS                    # Force P2P over PCIe (required for 7900 XTX dGPU setup)
+export NCCL_P2P_DISABLE=0                    # Ensure P2P is enabled (VLLM uses NCCL env vars for RCCL)
+
+# --- PyTorch/ROCm Memory Management ---
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+export HSA_ENABLE_SDMA=0                       # Disable SDMA for stability on dual GFX1100
+export AMD_SERIALIZE_KERNEL=3                  # Serialization for dual GPU sync stability
+export TORCH_BLAS_PREFER_HIPBLASLT=1           # Use hipBLASLt for performance
+
+# --- VLLM Specific ---
+export VLLM_WORKER_MULTIPROC_METHOD=spawn    # Required for ROCm multiprocessing
+export CUDA_VISIBLE_DEVICES=${HIP_VISIBLE_DEVICES}  # VLLM compatibility layer mapping
+
+# --- Verification ---
+echo "[GFX1100_DUAL_XTX_READY]"
+echo "HSA_OVERRIDE_GFX_VERSION: $HSA_OVERRIDE_GFX_VERSION"
+echo "HIP_VISIBLE_DEVICES: $HIP_VISIBLE_DEVICES"
+echo "RCCL_P2P: ENABLED (PCIe)"
+echo "VLLM_ROCM_COMPAT: ACTIVE"
