@@ -23,18 +23,18 @@ export VLLM_TARGET_DEVICE=rocm
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 
 # Memory Allocator Configuration - CRITICAL FIX: expandable segments for 48GB VRAM
-export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb:512
+export PYTORCH_HIP_ALLOC_CONF=expandable_segments:True,max_split_size_mb=512
 
-# Performance Tuning - CRITICAL FIX: Disabled fine-grain due to RDNA3 perf regression
-# export HSA_FORCE_FINE_GRAIN_PCIE=1  # DISABLED: Causes perf regression on RDNA3
+# Performance Tuning - CRITICAL FIX: Fine-grain required for P2P on RDNA3
+export HSA_FORCE_FINE_GRAIN_PCIE=1
 
 # RCCL P2P Configuration for PCIe Switch Topology - CRITICAL FIX: RCCL overrides for ROCm 6.2
 export RCCL_ENABLE_DIRECT_GPU_COMMUNICATION=1
 export RCCL_CROSS_P2P=1
 export RCCL_P2P_LEVEL=SYS
 
-# Model Configuration
-MODEL_PATH="/mnt/models/llm-awq"
+# Model Configuration - FIXED: Updated to correct model path
+MODEL_PATH="/home/fareez541/vllm_workspace/models/DeepSeek-R1-Distill-32B-AWQ"
 TP_SIZE=2
 
 # Launch vLLM Server
@@ -43,5 +43,5 @@ python -m vllm.entrypoints.openai.api_server \
   --tensor-parallel-size $TP_SIZE \
   --distributed-executor-backend mp \
   --quantization awq \
-  --enforce-eager \  # Required for ROCm 6.2 AWQ + Tensor Parallel
+  --enforce-eager \
   --port 8000
