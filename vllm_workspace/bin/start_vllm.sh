@@ -124,34 +124,88 @@ apply_python312_patches() {
     
     VLLM_PATH=$(python -c "import vllm; import os; print(os.path.dirname(vllm.__file__))" 2>/dev/null)
     if [[ -n "$VLLM_PATH" && -d "$VLLM_PATH" ]]; then
+        echo "Found vLLM at: $VLLM_PATH"
+        
         # Patch parallel_state.py for list[int] -> List[int]
         PARALLEL_STATE_FILE="$VLLM_PATH/distributed/parallel_state.py"
         if [[ -f "$PARALLEL_STATE_FILE" ]]; then
-            if grep -q "output_shape: list\\[int\\]" "$PARALLEL_STATE_FILE"; then
+            # Check if file contains the problematic pattern
+            if grep -q "output_shape: list\[int\]" "$PARALLEL_STATE_FILE"; then
                 echo "Patching parallel_state.py for Python 3.12 compatibility..."
                 [[ -f "$PARALLEL_STATE_FILE.bak" ]] || cp "$PARALLEL_STATE_FILE" "$PARALLEL_STATE_FILE.bak"
-                sed -i 's/output_shape: list\\[int\\]/output_shape: List[int]/g' "$PARALLEL_STATE_FILE"
-                if ! grep -q "^from typing import.*List" "$PARALLEL_STATE_FILE"; then
-                    sed -i '/^from __future__/a from typing import List' "$PARALLEL_STATE_FILE" 2>/dev/null || \
-                    sed -i '1i from typing import List' "$PARALLEL_STATE_FILE"
+                
+                # Fix: Use correct sed escaping - inside single quotes, \[ means literal [
+                sed -i 's/output_shape: list\[int\]/output_shape: List[int]/g' "$PARALLEL_STATE_FILE"
+                
+                # Check if typing.List import exists, if not add it
+                if ! grep -q "from typing import.*List" "$PARALLEL_STATE_FILE"; then
+                    # Add after existing typing imports or at top
+                    if grep -q "^from typing import" "$PARALLEL_STATE_FILE"; then
+                        # Append List to existing typing import
+                        sed -i 's/^from typing import \(.*\)$/from typing import \1, List/' "$PARALLEL_STATE_FILE"
+                    else
+                        # Add new import at line 1
+                        sed -i '1i from typing import List' "$PARALLEL_STATE_FILE"
+                    fi
                 fi
-                echo "Parallel state patched successfully."
+                
+                # Verify the patch
+                if grep -q "output_shape: List\[int\]" "$PARALLEL_STATE_FILE"; then
+                    echo "✓ Parallel state patched successfully."
+                else
+                    echo "✗ WARNING: Patch may not have applied correctly"
+                fi
+            else
+                echo "parallel_state.py already patched or doesn't need patching."
             fi
         fi
         
-        # Patch any other files with list[int] annotations
-        find "$VLLM_PATH" -name "*.py" -type f -exec grep -l "list\\[int\\]" {} \; | while read -r file; do
+        # Patch any other files with list[int] annotations in custom op registrations
+        echo "Scanning for other files with list[int] type annotations..."
+        find "$VLLM_PATH" -name "*.py" -type f -exec grep -l "list\[int\]" {} \; 2>/dev/null | while read -r file; do
+            # Skip if already backed up (already patched)
             [[ -f "$file.bak" ]] && continue
+            
+            # Only patch files that use torch custom ops (which trigger the schema inference)
             if grep -q "direct_register_custom_op\|torch.library\|@custom_op" "$file" 2>/dev/null; then
                 echo "Patching $(basename "$file") for Python 3.12 compatibility..."
                 cp "$file" "$file.bak"
-                sed -i 's/\\blist\\[int\\]\\b/List[int]/g' "$file"
+                
+                # Replace list[int] with List[int]
+                sed -i 's/list\[int\]/List[int]/g' "$file"
+                
+                # Add typing import if missing
                 if ! grep -q "^from typing import.*List" "$file"; then
-                    sed -i '1i from typing import List' "$file"
+                    if grep -q "^from typing import" "$file"; then
+                        sed -i 's/^from typing import \(.*\)$/from typing import \1, List/' "$file"
+                    else
+                        sed -i '1i from typing import List' "$file"
+                    fi
                 fi
             fi
         done
+        
+        # Also check for other problematic built-in generic types
+        find "$VLLM_PATH" -name "*.py" -type f -exec grep -l "dict\[str," {} \; 2>/dev/null | while read -r file; do
+            [[ -f "$file.bak" ]] && continue
+            if grep -q "direct_register_custom_op\|torch.library\|@custom_op" "$file" 2>/dev/null; then
+                echo "Patching $(basename "$file") dict types..."
+                cp "$file" "$file.bak"
+                sed -i 's/dict\[/Dict[/g' "$file"
+                if ! grep -q "^from typing import.*Dict" "$file"; then
+                    if grep -q "^from typing import" "$file"; then
+                        sed -i 's/^from typing import \(.*\)$/from typing import \1, Dict/' "$file"
+                    else
+                        sed -i '1i from typing import Dict' "$file"
+                    fi
+                fi
+            fi
+        done
+        
         echo "Python 3.12 compatibility patches applied."
+    else
+        echo "ERROR: Could not find vLLM installation path"
+        return 1
     fi
 }
 
@@ -173,9 +227,11 @@ else
     if [[ "$PYTHON_VER" == "3.12" ]]; then
         VLLM_PATH=$(python -c "import vllm; import os; print(os.path.dirname(vllm.__file__))" 2>/dev/null)
         if [[ -f "$VLLM_PATH/distributed/parallel_state.py" ]]; then
-            if grep -q "output_shape: list\\[int\\]" "$VLLM_PATH/distributed/parallel_state.py"; then
+            if grep -q "output_shape: list\[int\]" "$VLLM_PATH/distributed/parallel_state.py"; then
                 echo "Python 3.12 patches needed. Applying..."
                 apply_python312_patches
+            else
+                echo "Python 3.12 patches already applied."
             fi
         fi
     fi
