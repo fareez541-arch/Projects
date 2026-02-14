@@ -1,0 +1,26 @@
+
+### Phase 3: Context Loading Protocol
+
+All future agent operations MUST prioritize `[CORE_KNOWLEDGE]` files as primary context sources:
+
+1. **Primary Context Sources** (Load First)
+   - `system_migration/MISSION_MANDATE.md` - Educational mission and learning objectives
+   - `system_migration/archive_ccrn_output/ccrn_2026_blueprint.md` - Curriculum blueprint and content domains
+   - `system_migration/scripts/ccrn_master_rubric.md` - Assessment criteria and evaluation standards
+
+2. **Context Loading Procedure**
+   - Always verify existence of `[CORE_KNOWLEDGE]` files before processing queries
+   - Use content from these files to ground all educational recommendations
+   - Reference specific sections (e.g., `[DOMAIN: Cardiovascular]`) when citing material
+
+3. **Agent Memory Constraints**
+   - When context load exceeds 50%, prioritize MISSION_MANDATE over auxiliary files
+   - Use `hardware_env.sh` exports to verify GPU acceleration availability for processing
+   - Maintain references to rubrics/ directory for detailed assessment protocols
+
+4. **Migration Continuity**
+   - Phase 4 will involve extraction of `archive_ccrn_output/` contents
+   - Ensure GFX1100 environment variables are exported before GPU-intensive operations
+   - Cross-reference all generated content against `ccrn_master_rubric.md` criteria
+
+**Directive:** Treat `[CORE_KNOWLEDGE]` as the canonical source of truth for all CCRN educational content and assessment standards.

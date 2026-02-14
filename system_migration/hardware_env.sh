@@ -1,7 +1,6 @@
 #!/bin/bash
 # Hardware Environment Detection for CCRN Migration System
 # Phase 2: System Prerequisites Check
-
 set -euo pipefail
 
 echo "=== CCRN Workspace Hardware Audit ==="
@@ -22,7 +21,7 @@ echo ""
 
 # CCRN Processing Requirements Check
 echo "[MIGRATION_READINESS]"
-MIN_MEM=4  # GB
+MIN_MEM=4 # GB
 MIN_DISK=10 # GB
 
 if [ "$TOTAL_MEM_GB" -ge "$MIN_MEM" ] && [ "$DISK_AVAIL" -ge "$MIN_DISK" ]; then
@@ -54,3 +53,8 @@ echo "[AGENT_CONTEXT]"
 echo "workspace_root: $(pwd)"
 echo "detected_categories: CORE_KNOWLEDGE, SYSTEM_SCRIPTS, AGENT_MEMORY"
 echo "next_phase: ARCHIVE_EXTRACTION"
+
+# GFX1100 Environment Configuration (Phase 2)
+export HSA_OVERRIDE_GFX_VERSION=11.0.0
+export HIP_VISIBLE_DEVICES=0,1
+export ROCM_MAX_VRAM_PER_GPU=28000
