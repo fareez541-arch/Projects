@@ -33,6 +33,15 @@ if pip list 2>/dev/null | grep -q nvidia; then
     echo "These are incompatible with AMD GPUs."                                           
     echo "Fix with: pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
     exit 1                                                                                 
+fi
+
+# Safety Check: Detect xformers (pulls CUDA torch)
+if pip list 2>/dev/null | grep -iq xformers; then                                             
+    echo "ERROR: xformers detected in environment!"                            
+    echo "xformers is NOT supported on ROCm and will pull CUDA dependencies."                                           
+    echo "Remove with: pip uninstall xformers -y"
+    echo "Then reinstall ROCm torch: pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/rocm6.2 --force-reinstall"
+    exit 1                                                                                 
 fi                                                                                         
                                                                                            
 # Verify ROCm PyTorch is installed                                                         
