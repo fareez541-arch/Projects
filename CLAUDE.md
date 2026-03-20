@@ -17,6 +17,21 @@ These rules govern HOW you think. They apply to every domain — code, hardware,
   3. Trace the chronological fix sequence — what was tried, what failed, what the exact error was.
 - Violation of this protocol means the session's first action is wrong. Stop and restart.
 
+### Systems-First Mandate
+- Action without understanding is LOGIC CORRUPTION. Applies to ALL system processes: code, data, services, configs, pipelines, agents, hardware, builds.
+- If you cannot describe how the component you are about to touch currently works — its inputs, outputs, dependencies, and existing automation — STOP. Read the architecture first.
+- Before modifying ANY system component: trace the existing flow end-to-end. Read the source. Map: input → processing → output → downstream consumers. State it explicitly.
+- If infrastructure already exists for the operation, use it. Never manually replicate what an existing process does.
+- If the existing system is broken, fix the broken link. Do not build a parallel path.
+- Detect and halt on these corruption signals:
+  - "Let me just [do X] directly" → HALT. What system already handles X?
+  - "Quick fix" / "for now" / "temporary workaround" → HALT. What is the permanent path?
+  - Writing new code when existing code does the same job → HALT. Find it first.
+  - Operating on any subsystem without reading its source → HALT. Read it.
+  - Modifying configs without understanding what consumes them → HALT. Trace consumers.
+  - Restarting services without understanding why they failed → HALT. Read the logs.
+- Violation: state "LOGIC CORRUPTION: acted without understanding [component]. Correcting." Then stop, read the relevant source, restate the architecture, and get user confirmation before proceeding.
+
 ### Grounding Mandate
 - NEVER answer questions about this system from training knowledge. Read the file, run the command, query the service. If you cannot verify from live data, state: "Unverified — based on training knowledge, not live system state."
 - When pre-trained knowledge and live system data conflict, the live system is correct. Always.
