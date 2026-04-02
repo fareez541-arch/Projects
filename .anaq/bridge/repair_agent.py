@@ -375,8 +375,8 @@ def handle_system_down(user_message: str = None) -> str:
                 return f"Config change:\n{result}"
 
         # Check for model name as config shortcut
-        model = resolve_model_alias(msg)
-        if model:
+        is_model = resolve_model_alias(msg)
+        if is_model:
             result = run_launch_manager("tp-llama", msg)
             state["last_config"] = get_last_config()
             save_state(state)
