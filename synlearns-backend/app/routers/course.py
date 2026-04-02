@@ -76,6 +76,18 @@ async def get_module(
     progress = result.scalar_one_or_none()
     status = progress.status if progress else "locked"
 
+    # Locked modules return only summary — no syllabus detail or assets
+    if status == "locked":
+        return {
+            "module_number": mod.module_number,
+            "title": mod.title,
+            "description": mod.description,
+            "duration_hours": mod.duration_hours,
+            "sections": [],
+            "status": status,
+            "assets": [],
+        }
+
     # Build sections from syllabus with completion status
     sections = []
     completed_sections = progress.completed_sections if progress else {}
