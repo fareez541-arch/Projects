@@ -104,10 +104,23 @@ def _init_metadata_db():
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_docs_hash ON documents(content_hash)
     """)
-    conn.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_docs_unique_hash
-        ON documents(content_hash, index_name)
-    """)
+    # Deduplicate before creating unique index (keep lowest rowid per hash+index)
+    try:
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_docs_unique_hash
+            ON documents(content_hash, index_name)
+        """)
+    except sqlite3.IntegrityError:
+        logger.warning("Duplicate content_hash+index_name rows found — deduplicating")
+        conn.execute("""
+            DELETE FROM documents WHERE id NOT IN (
+                SELECT MIN(id) FROM documents GROUP BY content_hash, index_name
+            )
+        """)
+        conn.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_docs_unique_hash
+            ON documents(content_hash, index_name)
+        """)
     conn.commit()
     conn.close()
 
@@ -335,13 +348,15 @@ index_mgr = FAISSIndexManager()
 # ---------------------------------------------------------------------------
 
 _http_client: Optional[httpx.AsyncClient] = None
+_http_client_lock = asyncio.Lock()
 
 
 async def _get_client() -> httpx.AsyncClient:
     global _http_client
-    if _http_client is None or _http_client.is_closed:
-        _http_client = httpx.AsyncClient(timeout=120.0)
-    return _http_client
+    async with _http_client_lock:
+        if _http_client is None or _http_client.is_closed:
+            _http_client = httpx.AsyncClient(timeout=120.0)
+        return _http_client
 
 
 async def _embed_texts(texts: list[str]) -> list[list[float]]:
