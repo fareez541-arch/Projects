@@ -46,7 +46,9 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
     user.account_status = "active"
     user.activation_token = None
     user.activated_at = datetime.now(timezone.utc)
-    user.expires_at = datetime.now(timezone.utc) + timedelta(days=180)
+    # Tier-based access duration: tier 3 (Full) gets 365 days, others get 180 days
+    access_days = 365 if user.tier == 3 else 180
+    user.expires_at = datetime.now(timezone.utc) + timedelta(days=access_days)
     from sqlalchemy.orm.attributes import flag_modified
     user.device_slots = updated_slots
     flag_modified(user, "device_slots")
