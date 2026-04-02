@@ -545,6 +545,10 @@ async def ingest(request: IngestRequest):
         return {"status": "duplicate", "content_hash": ch}
 
     status = "ingested" if faiss_id >= 0 else "pending_sync"
+    if status == "pending_sync":
+        logger.info("FAISS pending: doc_id=%d index=%s — awaiting nightly Harrier backfill", doc_id, request.index)
+    else:
+        logger.debug("Ingested: doc_id=%d faiss_id=%d index=%s", doc_id, faiss_id, request.index)
     return {"status": status, "id": doc_id, "faiss_id": faiss_id, "index": request.index}
 
 
