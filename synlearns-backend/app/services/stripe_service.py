@@ -64,7 +64,13 @@ def resolve_tier_from_session(checkout_session_id: str) -> int:
     except Exception as e:
         logger.error("Failed to retrieve line items for session %s: %s", checkout_session_id, e)
 
-    # Safe default: any paying customer gets full access rather than tier 0
+    # Safe default: any paying customer gets full access rather than tier 0.
+    # This MUST be investigated — it masks misconfigured price IDs in .env.
+    logger.warning(
+        "FALLBACK: No price ID matched for session %s — defaulting to tier 3. "
+        "Check STRIPE_PRICE_ID_FEEDBACK/REFERRAL/FULL in .env.",
+        checkout_session_id,
+    )
     return 3
 
 
