@@ -104,6 +104,10 @@ def _init_metadata_db():
     conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_docs_hash ON documents(content_hash)
     """)
+    conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_docs_unique_hash
+        ON documents(content_hash, index_name)
+    """)
     conn.commit()
     conn.close()
 
@@ -151,6 +155,50 @@ def _insert_metadata(
     conn.commit()
     conn.close()
     return doc_id
+
+
+def _check_and_insert_metadata(
+    index_name: str,
+    faiss_id: int,
+    content: str,
+    source: str,
+    agent_scope: list[str],
+    content_hash: str,
+    metadata: dict,
+) -> tuple[bool, int]:
+    """Atomic duplicate check + insert in a single connection/transaction.
+
+    Returns (is_duplicate, doc_id). doc_id is 0 if duplicate.
+    Uses the UNIQUE(content_hash, index_name) constraint as the final guard.
+    """
+    conn = sqlite3.connect(str(METADATA_DB))
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    try:
+        cur = conn.execute(
+            """INSERT INTO documents
+               (index_name, faiss_id, content, source, agent_scope, content_hash, metadata_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                index_name,
+                faiss_id,
+                content,
+                source,
+                json.dumps(agent_scope),
+                content_hash,
+                json.dumps(metadata),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        doc_id = cur.lastrowid
+        conn.commit()
+        return False, doc_id
+    except sqlite3.IntegrityError:
+        # UNIQUE constraint violation — duplicate
+        conn.rollback()
+        return True, 0
+    finally:
+        conn.close()
 
 
 def _search_metadata(
@@ -450,13 +498,11 @@ async def ingest(request: IngestRequest):
         )
 
     ch = _content_hash(request.content)
-    if _check_duplicate(ch, request.index):
-        return {"status": "duplicate", "content_hash": ch}
 
     vec = await _embed_single(request.content)
     faiss_id = await index_mgr.add_vector_safe(request.index, vec)
 
-    doc_id = _insert_metadata(
+    is_dup, doc_id = _check_and_insert_metadata(
         index_name=request.index,
         faiss_id=faiss_id,
         content=request.content,
@@ -465,6 +511,9 @@ async def ingest(request: IngestRequest):
         content_hash=ch,
         metadata=request.metadata,
     )
+
+    if is_dup:
+        return {"status": "duplicate", "content_hash": ch}
 
     return {"status": "ingested", "id": doc_id, "faiss_id": faiss_id, "index": request.index}
 
@@ -478,13 +527,10 @@ async def batch_ingest(request: BatchIngestRequest):
             continue
 
         ch = _content_hash(doc.content)
-        if _check_duplicate(ch, doc.index):
-            results.append({"status": "duplicate", "content_hash": ch})
-            continue
 
         vec = await _embed_single(doc.content)
         faiss_id = await index_mgr.add_vector_safe(doc.index, vec)
-        doc_id = _insert_metadata(
+        is_dup, doc_id = _check_and_insert_metadata(
             index_name=doc.index,
             faiss_id=faiss_id,
             content=doc.content,
@@ -493,7 +539,10 @@ async def batch_ingest(request: BatchIngestRequest):
             content_hash=ch,
             metadata=doc.metadata,
         )
-        results.append({"status": "ingested", "id": doc_id, "faiss_id": faiss_id})
+        if is_dup:
+            results.append({"status": "duplicate", "content_hash": ch})
+        else:
+            results.append({"status": "ingested", "id": doc_id, "faiss_id": faiss_id})
 
     # Flush all indices after batch
     index_mgr.save_all()
