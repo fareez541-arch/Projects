@@ -252,12 +252,17 @@ def auto_repair() -> str:
 TELEGRAM_BOT_TOKEN = os.environ.get("TG_SYSTEM_TOKEN", "")
 TELEGRAM_CHAT_ID = int(os.environ.get("TELEGRAM_CHAT_ID", "0"))
 if not TELEGRAM_BOT_TOKEN:
-    raise RuntimeError("TG_SYSTEM_TOKEN environment variable required")
-TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    import logging as _tg_log
+    _tg_log.getLogger("repair_agent").warning(
+        "TG_SYSTEM_TOKEN not set — Telegram notifications disabled"
+    )
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage" if TELEGRAM_BOT_TOKEN else ""
 
 
 def send_telegram(message: str, parse_mode: str = None) -> bool:
     """Send a Telegram message to Fareez. One HTTP POST, zero dependencies."""
+    if not TELEGRAM_API:
+        return False
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
