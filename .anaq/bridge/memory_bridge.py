@@ -674,8 +674,8 @@ async def api_obs_record(request: ObsRecordRequest):
                     "agent": request.agent,
                 },
             )
-        except Exception:
-            pass  # FAISS ingest failure doesn't block DB record
+        except Exception as e:
+            logger.warning("FAISS observation ingest failed for agent=%s: %s", request.agent, e)
 
     return result
 
