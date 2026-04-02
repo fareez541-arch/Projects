@@ -863,8 +863,9 @@ async def chat_completions(request: Request):
             except Exception as e:
                 logger.debug("Training collector error (non-fatal): %s", e)
 
-        # Write conditioning
-        _write_conditioning(
+        # Write conditioning (sync I/O → offload to thread to avoid blocking event loop)
+        await asyncio.to_thread(
+            _write_conditioning,
             agent=agent,
             score=score,
             critique=critique,
@@ -1012,7 +1013,8 @@ async def chat_completions(request: Request):
     # Exhausted all retries — kill session
     logger.warning("SESSION KILLED agent=%s session=%s — max retries exceeded", agent, session_key)
 
-    _write_conditioning(
+    await asyncio.to_thread(
+        _write_conditioning,
         agent=agent,
         score=0,
         critique=f"TOTAL FAILURE: Exhausted all {MAX_RETRIES + 1} attempts. Session killed.",
