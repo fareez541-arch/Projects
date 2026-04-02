@@ -127,12 +127,24 @@ _sh.setFormatter(_fmt)
 logger.addHandler(_sh)
 
 # ---------------------------------------------------------------------------
+# Background task tracking — prevent silent GC of fire-and-forget tasks
+# ---------------------------------------------------------------------------
+_background_tasks: set = set()
+
+# ---------------------------------------------------------------------------
 # Retry state — keyed by session identifier
 # ---------------------------------------------------------------------------
 
 # Maps session_key -> {"attempts": int, "last_user_text": str}
 _retry_state: dict[str, dict] = {}
-_retry_lock = asyncio.Lock()
+_retry_lock: asyncio.Lock = None  # initialized lazily on first use
+
+
+def _get_retry_lock() -> asyncio.Lock:
+    global _retry_lock
+    if _retry_lock is None:
+        _retry_lock = asyncio.Lock()
+    return _retry_lock
 
 # Evict stale sessions after 10 minutes
 SESSION_TTL = 600
@@ -164,7 +176,7 @@ def _session_key_from_messages(messages: list[dict]) -> str:
 
 
 async def _get_retry_count(session_key: str) -> int:
-    async with _retry_lock:
+    async with _get_retry_lock():
         entry = _retry_state.get(session_key)
         if entry is None:
             return 0
@@ -172,7 +184,7 @@ async def _get_retry_count(session_key: str) -> int:
 
 
 async def _increment_retry(session_key: str) -> int:
-    async with _retry_lock:
+    async with _get_retry_lock():
         if session_key not in _retry_state:
             _retry_state[session_key] = {"attempts": 0, "ts": time.time()}
         _retry_state[session_key]["attempts"] += 1
@@ -181,13 +193,13 @@ async def _increment_retry(session_key: str) -> int:
 
 
 async def _reset_retry(session_key: str):
-    async with _retry_lock:
+    async with _get_retry_lock():
         _retry_state.pop(session_key, None)
 
 
 async def _evict_stale_sessions():
     """Remove sessions older than TTL."""
-    async with _retry_lock:
+    async with _get_retry_lock():
         now = time.time()
         stale = [k for k, v in _retry_state.items() if now - v.get("ts", 0) > SESSION_TTL]
         for k in stale:
@@ -563,11 +575,11 @@ async def _forward_and_collect_stream(
                 if not line:
                     continue
 
-                raw_chunks.append(line + "\n\n")
-
                 if line == "data: [DONE]":
                     raw_chunks.append("data: [DONE]\n\n")
                     continue
+
+                raw_chunks.append(line + "\n\n")
 
                 if not line.startswith("data: "):
                     continue
@@ -798,8 +810,10 @@ async def chat_completions(request: Request):
             agent, score, approved, attempt + 1, grade_elapsed, critique,
         )
 
-        # Log score to scoring API (fire and forget)
-        asyncio.create_task(_log_score(grade_result, client))
+        # Log score to scoring API (tracked fire-and-forget)
+        task = asyncio.create_task(_log_score(grade_result, client))
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
 
         # Record to training data collector
         if TRAINING_COLLECTOR:
