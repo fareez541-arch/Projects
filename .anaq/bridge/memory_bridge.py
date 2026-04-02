@@ -500,8 +500,14 @@ async def ingest(request: IngestRequest):
 
     ch = _content_hash(request.content)
 
-    vec = await _embed_single(request.content)
-    faiss_id = await index_mgr.add_vector_safe(request.index, vec)
+    # Try to embed and add to FAISS; if embedding service is down, store in
+    # SQLite with faiss_id=-1 (pending). Nightly Harrier sync will backfill.
+    faiss_id = -1
+    try:
+        vec = await _embed_single(request.content)
+        faiss_id = await index_mgr.add_vector_safe(request.index, vec)
+    except Exception as e:
+        logger.warning("Embedding unavailable, storing to SQLite only (pending sync): %s", e)
 
     is_dup, doc_id = _check_and_insert_metadata(
         index_name=request.index,
@@ -516,7 +522,8 @@ async def ingest(request: IngestRequest):
     if is_dup:
         return {"status": "duplicate", "content_hash": ch}
 
-    return {"status": "ingested", "id": doc_id, "faiss_id": faiss_id, "index": request.index}
+    status = "ingested" if faiss_id >= 0 else "pending_sync"
+    return {"status": status, "id": doc_id, "faiss_id": faiss_id, "index": request.index}
 
 
 @app.post("/batch_ingest")
@@ -529,8 +536,13 @@ async def batch_ingest(request: BatchIngestRequest):
 
         ch = _content_hash(doc.content)
 
-        vec = await _embed_single(doc.content)
-        faiss_id = await index_mgr.add_vector_safe(doc.index, vec)
+        faiss_id = -1
+        try:
+            vec = await _embed_single(doc.content)
+            faiss_id = await index_mgr.add_vector_safe(doc.index, vec)
+        except Exception as e:
+            logger.warning("Batch embed failed for doc, storing pending: %s", e)
+
         is_dup, doc_id = _check_and_insert_metadata(
             index_name=doc.index,
             faiss_id=faiss_id,
@@ -658,26 +670,31 @@ async def api_obs_record(request: ObsRecordRequest):
 
     # Also ingest into OBSERVATIONS FAISS index for semantic search
     if result.get("action") in ("created", "reinforced"):
+        obs_content = f"[{request.observation_type}] {request.observation}"
+        obs_hash = _content_hash(f"obs:{request.agent}:{request.observation}")
+        obs_meta = {
+            "type": "observation",
+            "observation_type": request.observation_type,
+            "tier": result.get("tier", "MEDIUM"),
+            "confidence": request.confidence,
+            "agent": request.agent,
+        }
+        faiss_id = -1
         try:
-            vec = await _embed_single(f"[{request.observation_type}] {request.observation}")
+            vec = await _embed_single(obs_content)
             faiss_id = await index_mgr.add_vector_safe("OBSERVATIONS", vec)
-            _insert_metadata(
-                index_name="OBSERVATIONS",
-                faiss_id=faiss_id,
-                content=f"[{request.observation_type}] {request.observation}",
-                source=request.source,
-                agent_scope=[request.agent],
-                content_hash=_content_hash(f"obs:{request.agent}:{request.observation}"),
-                metadata={
-                    "type": "observation",
-                    "observation_type": request.observation_type,
-                    "tier": result.get("tier", "MEDIUM"),
-                    "confidence": request.confidence,
-                    "agent": request.agent,
-                },
-            )
         except Exception as e:
-            logger.warning("FAISS observation ingest failed for agent=%s: %s", request.agent, e)
+            logger.warning("Embedding unavailable for observation, storing pending: %s", e)
+
+        _insert_metadata(
+            index_name="OBSERVATIONS",
+            faiss_id=faiss_id,
+            content=obs_content,
+            source=request.source,
+            agent_scope=[request.agent],
+            content_hash=obs_hash,
+            metadata=obs_meta,
+        )
 
     return result
 

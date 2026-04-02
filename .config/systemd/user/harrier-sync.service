@@ -1,0 +1,11 @@
+[Unit]
+Description=Nightly Harrier-27B FAISS Vector Sync
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/fareez541/.anaq/faiss/nightly_harrier_sync.sh
+TimeoutStartSec=14400
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=harrier-sync
