@@ -515,6 +515,10 @@ async def ingest(request: IngestRequest):
 
     ch = _content_hash(request.content)
 
+    # Check duplicate BEFORE embedding to avoid FAISS orphans (P2-006 TOCTOU fix)
+    if _check_duplicate(ch, request.index):
+        return {"status": "duplicate", "content_hash": ch}
+
     # Try to embed and add to FAISS; if embedding service is down, store in
     # SQLite with faiss_id=-1 (pending). Nightly Harrier sync will backfill.
     faiss_id = -1
@@ -535,6 +539,9 @@ async def ingest(request: IngestRequest):
     )
 
     if is_dup:
+        # Rare race: concurrent request inserted between our check and insert.
+        # FAISS vector is orphaned but nightly cleanup handles this.
+        logger.debug("Race-condition duplicate detected for hash=%s", ch[:16])
         return {"status": "duplicate", "content_hash": ch}
 
     status = "ingested" if faiss_id >= 0 else "pending_sync"
