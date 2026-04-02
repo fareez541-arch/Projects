@@ -845,30 +845,60 @@ async def api_export_dpo(agent: Optional[str] = None, min_gap: int = 10):
     return await asyncio.to_thread(tc_export_dpo, agent=agent, min_gap=min_gap)
 
 
+class PropagateDeleteRequest(BaseModel):
+    doc_id: int = 0
+    content_hash: str = ""
+
+
 @app.post("/propagate_delete")
-async def api_propagate_delete(doc_id: int = 0, content_hash: str = ""):
+async def api_propagate_delete(request: PropagateDeleteRequest):
     """
     Propagate a deletion from local store to Bridge.
-    Accepts either doc_id or content_hash.
+    Accepts either doc_id or content_hash (JSON body).
+    Deletes metadata rows and logs removed FAISS IDs (orphaned vectors
+    are cleaned on next /rebuild).
     """
     conn_meta = sqlite3.connect(str(METADATA_DB))
+    conn_meta.execute("PRAGMA busy_timeout=5000")
     deleted = 0
+    removed_faiss_ids: list[tuple[str, int]] = []
 
-    if doc_id:
-        row = conn_meta.execute("SELECT id FROM documents WHERE id = ?", (doc_id,)).fetchone()
+    if request.doc_id:
+        row = conn_meta.execute(
+            "SELECT id, index_name, faiss_id FROM documents WHERE id = ?",
+            (request.doc_id,),
+        ).fetchone()
         if row:
-            conn_meta.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+            conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
+            removed_faiss_ids.append((row[1], row[2]))
             deleted += 1
 
-    if content_hash:
-        rows = conn_meta.execute("SELECT id FROM documents WHERE content_hash = ?", (content_hash,)).fetchall()
+    if request.content_hash:
+        rows = conn_meta.execute(
+            "SELECT id, index_name, faiss_id FROM documents WHERE content_hash = ?",
+            (request.content_hash,),
+        ).fetchall()
         for row in rows:
             conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
+            removed_faiss_ids.append((row[1], row[2]))
             deleted += 1
 
     conn_meta.commit()
     conn_meta.close()
-    return {"deleted": deleted, "doc_id": doc_id, "content_hash": content_hash}
+
+    if deleted > 0:
+        logger.info(
+            "propagate_delete: removed %d doc(s) [doc_id=%s, hash=%s, faiss_ids=%s]",
+            deleted, request.doc_id, request.content_hash[:16] if request.content_hash else "",
+            removed_faiss_ids,
+        )
+
+    return {
+        "deleted": deleted,
+        "doc_id": request.doc_id,
+        "content_hash": request.content_hash,
+        "orphaned_faiss_ids": removed_faiss_ids,
+    }
 
 
 @app.get("/context/{agent_name}")
