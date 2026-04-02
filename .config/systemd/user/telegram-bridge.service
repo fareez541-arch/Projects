@@ -1,0 +1,17 @@
+[Unit]
+Description=ANAQ Telegram Multi-Bot Bridge (Pearl, Nimah, System)
+After=agent-zero.service memory-bridge.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/fareez541/.anaq/bridge
+ExecStart=/home/fareez541/miniforge3/envs/agent0/bin/python /home/fareez541/.anaq/bridge/telegram_bots.py
+Restart=always
+RestartSec=10
+SyslogIdentifier=telegram-bots
+EnvironmentFile=/home/fareez541/.anaq/bridge.env
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
