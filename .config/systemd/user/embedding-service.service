@@ -1,0 +1,24 @@
+[Unit]
+Description=ANAQ Embedding Service - nomic-embed-text-v1.5 (port 9500)
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/home/fareez541/miniforge3/envs/vllm/bin/python /home/fareez541/vllm_workspace/services/embedding_service.py
+WorkingDirectory=/home/fareez541/vllm_workspace/services
+Environment=HOME=/home/fareez541
+Environment=HIP_VISIBLE_DEVICES=0
+Environment=ROCR_VISIBLE_DEVICES=0
+Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
+Restart=always
+RestartSec=3
+MemoryMax=4G
+OOMScoreAdjust=-500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=embedding-service
+
+[Install]
+WantedBy=default.target

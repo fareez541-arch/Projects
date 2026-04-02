@@ -1,0 +1,21 @@
+[Unit]
+Description=ANAQ Grading Proxy (inline quality gate between OC and llama-server)
+After=claude-code-bridge.service openclaw-gateway.service memory-bridge.service
+Wants=claude-code-bridge.service memory-bridge.service
+StartLimitBurst=10
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/home/fareez541/miniforge3/envs/agent0/bin/python /home/fareez541/.anaq/bridge/grading_proxy.py
+Restart=on-failure
+RestartSec=10
+MemoryMax=2G
+Environment=PYTHONUNBUFFERED=1
+Environment=LLAMA_SERVER_URL=http://127.0.0.1:8000
+Environment=BRIDGE_URL=http://127.0.0.1:5500
+Environment=SCORING_URL=http://127.0.0.1:9600
+Environment=PROXY_PORT=8001
+
+[Install]
+WantedBy=default.target

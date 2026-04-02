@@ -1,0 +1,23 @@
+[Unit]
+Description=ANAQ Heartbeat Monitor
+After=agent-zero.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/home/fareez541/miniforge3/envs/agent0/bin/python /home/fareez541/.anaq/bridge/heartbeat.py
+WorkingDirectory=/home/fareez541/.anaq/bridge
+Environment=HOME=/home/fareez541
+Environment=PATH=/home/fareez541/miniforge3/envs/agent0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/rocm/bin
+Environment=ROCM_HOME=/opt/rocm
+Restart=always
+RestartSec=60
+MemoryMax=512M
+OOMScoreAdjust=-500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=anaq-heartbeat
+
+[Install]
+WantedBy=default.target

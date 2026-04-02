@@ -1,0 +1,24 @@
+[Unit]
+Description=ANAQ Claude Code Bridge (port 5500)
+After=network.target
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/home/fareez541/miniforge3/envs/agent0/bin/python /home/fareez541/.anaq/bridge/claude_code_bridge.py
+WorkingDirectory=/home/fareez541/.anaq/bridge
+Environment=HOME=/home/fareez541
+Environment=PATH=/home/fareez541/.local/bin:/home/fareez541/miniforge3/envs/agent0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=ROCM_HOME=/opt/rocm
+Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
+Restart=always
+RestartSec=5
+MemoryMax=2G
+OOMScoreAdjust=-500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-code-bridge
+
+[Install]
+WantedBy=default.target

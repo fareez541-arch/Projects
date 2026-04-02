@@ -1,0 +1,29 @@
+[Unit]
+Description=Agent Zero WebUI (port 5000)
+After=claude-code-bridge.service memory-bridge.service
+Wants=claude-code-bridge.service memory-bridge.service embedding-service.service
+StartLimitBurst=5
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/home/fareez541/miniforge3/envs/agent0/bin/python /home/fareez541/agent-zero/run_ui.py
+WorkingDirectory=/home/fareez541/agent-zero
+Environment=HOME=/home/fareez541
+Environment=PATH=/home/fareez541/.local/bin:/home/fareez541/miniforge3/envs/agent0/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=ROCM_HOME=/opt/rocm
+Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
+Environment=HIP_VISIBLE_DEVICES=0,1
+Environment=WEB_UI_HOST=127.0.0.1
+Environment=OPENAI_API_KEY=no-key
+Restart=always
+RestartSec=10
+MemoryMax=8G
+MemoryHigh=6G
+OOMScoreAdjust=500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=agent-zero
+
+[Install]
+WantedBy=default.target
