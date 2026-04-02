@@ -31,8 +31,8 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         tier = resolve_tier_from_session(data["checkout_session_id"])
 
         if existing:
-            # Re-purchase or renewal — reset if expired
             if existing.account_status == "expired":
+                # Re-purchase or renewal — reset expired account
                 token = generate_activation_token()
                 existing.activation_token = token
                 existing.account_status = "pending"
@@ -41,6 +41,12 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
                 existing.stripe_checkout_session_id = data["checkout_session_id"]
                 await db.commit()
                 send_checkout_email(data["email"], token, data.get("name"))
+            elif existing.account_status == "active" and tier > existing.tier:
+                # Active user upgrading tier — apply immediately
+                existing.tier = tier
+                existing.stripe_customer_id = data["customer_id"]
+                existing.stripe_checkout_session_id = data["checkout_session_id"]
+                await db.commit()
             return {"status": "existing_user_updated"}
 
         # Create new user
