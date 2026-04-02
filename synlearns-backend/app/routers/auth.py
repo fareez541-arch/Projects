@@ -220,6 +220,24 @@ async def refresh(req: RefreshRequest, db: AsyncSession = Depends(get_db)):
     )
 
 
+@router.post("/logout")
+async def logout(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Invalidate all active sessions for the current user."""
+    result = await db.execute(
+        select(UserSession).where(
+            UserSession.user_id == user.id,
+            UserSession.is_active == True,
+        )
+    )
+    for session in result.scalars().all():
+        session.is_active = False
+    await db.commit()
+    return {"status": "logged_out"}
+
+
 @router.get("/me", response_model=UserPublic)
 async def me(user: User = Depends(get_current_user)):
     return UserPublic.model_validate(user)
