@@ -104,20 +104,26 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
 
     def _search_sqlite(self, query, db_path, top_k):
         """Search SQLite memory by embedding similarity — CPU only"""
+        conn = None
         try:
             query_vec = model.encode(truncate_texts([query]), normalize_embeddings=True)[0]
             conn = sqlite3.connect(db_path)
             cursor = conn.execute("SELECT id, content, embedding FROM memory_vectors")
             results = []
             for row in cursor:
-                stored_vec = json.loads(row[2])
+                try:
+                    stored_vec = json.loads(row[2])
+                except (json.JSONDecodeError, TypeError):
+                    continue  # skip corrupted embedding rows
                 sim = sum(a * b for a, b in zip(query_vec, stored_vec))
                 results.append({"id": row[0], "content": row[1], "score": float(sim)})
-            conn.close()
             results.sort(key=lambda x: x["score"], reverse=True)
             return results[:top_k]
         except Exception as e:
             return [{"error": str(e)}]
+        finally:
+            if conn is not None:
+                conn.close()
 
     def _respond(self, code, data):
         try:
