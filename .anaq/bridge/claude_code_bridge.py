@@ -185,7 +185,12 @@ async def _invoke_claude(
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
-        env={**os.environ, "LANG": "en_US.UTF-8"},
+        env={
+            "PATH": os.environ.get("PATH", "/usr/local/bin:/usr/bin:/bin"),
+            "HOME": os.environ.get("HOME", ""),
+            "LANG": "en_US.UTF-8",
+            "ANTHROPIC_API_KEY": os.environ.get("ANTHROPIC_API_KEY", ""),
+        },
     )
 
     try:

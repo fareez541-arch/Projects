@@ -24,7 +24,7 @@ from sentence_transformers import SentenceTransformer
 # Use a small CPU-friendly model
 MODEL_NAME = "nomic-ai/nomic-embed-text-v1.5"
 MAX_SEQ_LENGTH = 2048  # nomic-embed-text-v1.5 max context
-BIND_HOST = "0.0.0.0"
+BIND_HOST = "127.0.0.1"
 BIND_PORT = 9500
 
 _device = "cuda" if os.environ.get("HIP_VISIBLE_DEVICES") else "cpu"
@@ -60,7 +60,11 @@ class EmbeddingHandler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
-        body = json.loads(self.rfile.read(length))
+        try:
+            body = json.loads(self.rfile.read(length))
+        except (json.JSONDecodeError, ValueError):
+            self._respond(400, {"error": "invalid JSON body"})
+            return
 
         if self.path == "/v1/embeddings":
             # OpenAI-compatible embedding endpoint for Agent Zero / LiteLLM
