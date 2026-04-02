@@ -1,0 +1,29 @@
+name = "sls-failover"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+account_id = "6f59fdd984850e748b83c20e60469abc"
+
+# D1 database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "sls-failover"
+database_id = "00de8830-c947-4a4a-ba67-de2a64ab4b85"
+
+# KV namespace for assessment cache during failover
+[[kv_namespaces]]
+binding = "CACHE"
+id = "7a9c7113499d40248202b48ee7c82983"
+
+# R2 bucket binding — uncomment after enabling R2 in CF dashboard
+# [[r2_buckets]]
+# binding = "BACKUPS"
+# bucket_name = "sls-backups"
+
+[vars]
+MODE = "failover"
+APP_URL = "https://synlearns.ai"
+
+# Secrets (set via wrangler secret put):
+# JWT_PRIVATE_KEY — RSA private key for token signing (REQUIRED for failover login/refresh)
+# JWT_PUBLIC_KEY — RSA public key for token verification
+# CONTENT_ENCRYPTION_KEY — AES-256-GCM key for content decryption
