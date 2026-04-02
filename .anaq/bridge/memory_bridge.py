@@ -407,6 +407,7 @@ memory_metrics = MetricsCollector("memory_bridge")
 async def lifespan(app: FastAPI):
     logger.info("=== Memory Bridge starting on port 9600 ===")
     _init_metadata_db()
+    obs_init_db()
 
     # Pre-load all indices
     for name in INDEX_NAMES:
@@ -624,6 +625,7 @@ async def list_models():
 # ---------------------------------------------------------------------------
 
 from observation_engine import (
+    _init_db as obs_init_db,
     record_observation as obs_record,
     get_agent_observations as obs_get,
     get_mandated_observations as obs_mandated,
