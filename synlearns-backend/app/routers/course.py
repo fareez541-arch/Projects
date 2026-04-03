@@ -164,9 +164,23 @@ async def update_progress(
         raise HTTPException(status_code=404, detail="Module not found")
 
     # Verify section_number is a valid section in the syllabus
-    valid_sections = {s.get("section_number") for s in (mod.syllabus or [])}
-    if req.section_number not in valid_sections:
+    syllabus_sections = sorted(
+        [s.get("section_number") for s in (mod.syllabus or []) if s.get("section_number") is not None]
+    )
+    if req.section_number not in syllabus_sections:
         raise HTTPException(status_code=400, detail="Invalid section number for this module")
+
+    # Enforce sequential progression: all prior sections must be completed
+    completed = dict(progress.completed_sections or {})
+    for prior_sec in syllabus_sections:
+        if prior_sec >= req.section_number:
+            break
+        prior_key = str(prior_sec)
+        if prior_key not in completed or not completed[prior_key]:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Complete section {prior_sec} before starting section {req.section_number}",
+            )
 
     # Update section completion
     completed = dict(progress.completed_sections or {})
