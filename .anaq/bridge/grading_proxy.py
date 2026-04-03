@@ -440,11 +440,21 @@ async def _log_score(result: dict, http_client: httpx.AsyncClient):
 # ---------------------------------------------------------------------------
 
 def _write_conditioning(agent: str, score: int, critique: str, fix: str, approved: bool, dims: dict):
-    """Write to the agent's ANAQ_FEEDBACK.md conditioning file."""
+    """Write to the agent's ANAQ_FEEDBACK.md conditioning file.
+
+    Uses fcntl.flock to prevent concurrent writes from losing entries.
+    """
+    import fcntl
+
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     memory_dir = OC_HOME / f"workspace-{agent}" / "memory"
     memory_dir.mkdir(parents=True, exist_ok=True)
     feedback_file = memory_dir / "ANAQ_FEEDBACK.md"
+    lock_file = memory_dir / ".ANAQ_FEEDBACK.lock"
+
+    # Acquire file lock to prevent read-modify-write race
+    lock_fd = open(lock_file, "w")
+    fcntl.flock(lock_fd, fcntl.LOCK_EX)
 
     try:
         existing = feedback_file.read_text() if feedback_file.exists() else ""
@@ -540,6 +550,9 @@ Points: +{total_positive}/-{total_negative} | Avg Score: {avg_score:.0f}% | Tren
         logger.debug("Conditioning written to %s", feedback_file)
     except OSError as e:
         logger.error("Failed to write conditioning for %s: %s", agent, e)
+    finally:
+        fcntl.flock(lock_fd, fcntl.LOCK_UN)
+        lock_fd.close()
 
 
 # ---------------------------------------------------------------------------
