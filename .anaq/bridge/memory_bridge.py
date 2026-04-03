@@ -34,10 +34,10 @@ from pydantic import BaseModel, Field
 
 FAISS_DIR = Path.home() / ".anaq" / "faiss"
 METADATA_DB = FAISS_DIR / "metadata.db"
-EMBED_URL = os.environ.get("EMBED_URL", "http://localhost:9500")
+EMBED_URL = os.environ.get("EMBED_URL", "http://localhost:9510")
 LOG_DIR = Path.home() / ".anaq" / "logs"
 LOG_FILE = LOG_DIR / "memory_bridge.log"
-VECTOR_DIM = 768  # nomic-embed-text-v1.5
+VECTOR_DIM = 5376  # Harrier-27B
 
 INDEX_NAMES = [
     "SYSTEM",
@@ -360,16 +360,19 @@ async def _get_client() -> httpx.AsyncClient:
 
 
 async def _embed_texts(texts: list[str]) -> list[list[float]]:
-    """Get embeddings from the embedding service on port 9500."""
+    """Get embeddings from Harrier-27B via llama-server /v1/embeddings."""
     client = await _get_client()
+    embeddings = []
     try:
-        resp = await client.post(
-            f"{EMBED_URL}/embed",
-            json={"texts": texts},
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        return data["embeddings"]
+        for text in texts:
+            resp = await client.post(
+                f"{EMBED_URL}/v1/embeddings",
+                json={"input": text[:32000], "model": "harrier"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            embeddings.append(data["data"][0]["embedding"])
+        return embeddings
     except Exception as e:
         logger.error("Embedding service error: %s", e)
         raise HTTPException(status_code=503, detail=f"Embedding service unavailable: {e}")

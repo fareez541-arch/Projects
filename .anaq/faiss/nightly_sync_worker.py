@@ -20,7 +20,7 @@ import requests
 
 FAISS_DIR = Path.home() / ".anaq" / "faiss"
 DB_PATH = FAISS_DIR / "metadata.db"
-SERVERS = ["http://localhost:9510", "http://localhost:9511"]
+SERVERS = ["http://localhost:9510"]
 NEW_DIM = 5376
 
 CHUNK_SIZE = 20000

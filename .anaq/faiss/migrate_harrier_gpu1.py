@@ -28,8 +28,9 @@ FAISS_DIR = Path.home() / ".anaq" / "faiss"
 BACKUP_DIR = FAISS_DIR / "backup_nomic_768d"
 DB_PATH = FAISS_DIR / "metadata.db"
 
-# Single server on GPU 1
-SERVER = "http://localhost:9511"
+# HIP server on GPU 0
+SERVERS = ["http://localhost:9510"]
+SERVER = SERVERS[0]
 
 INDEX_NAMES = [
     "SYSTEM", "SOLUTIONS", "BUSINESS", "MEDICAL", "AGENTS",
@@ -88,7 +89,10 @@ def needs_migration(index_name: str) -> bool:
 
 
 def migrate_index(index_name: str, docs: list[tuple[int, str]], db: sqlite3.Connection):
-    """Re-embed all docs for one index and write new FAISS index."""
+    """Re-embed all docs for one index and write new FAISS index.
+
+    Writes incrementally to FAISS per batch to avoid OOM.
+    """
     if not docs:
         idx = faiss.IndexFlatIP(NEW_DIM)
         faiss.write_index(idx, str(FAISS_DIR / f"{index_name}.index"))
@@ -96,63 +100,85 @@ def migrate_index(index_name: str, docs: list[tuple[int, str]], db: sqlite3.Conn
         return 0, 0
 
     total = len(docs)
-    vectors = []
-    doc_ids = []
-    failed_docs = []  # (doc_id, content) for chunking pass
+    failed_count = 0
 
-    for i, (doc_id, content) in enumerate(docs):
-        emb = get_embedding(content)
+    from concurrent.futures import ThreadPoolExecutor, as_completed
 
-        if emb is None:
-            # Try chunking
-            chunks = chunk_text(content)
-            if len(chunks) > 1:
-                chunk_success = False
-                for j, chunk in enumerate(chunks):
-                    cemb = get_embedding(chunk)
-                    if cemb is not None:
-                        vectors.append(cemb)
-                        doc_ids.append(doc_id)
-                        chunk_success = True
-                if not chunk_success:
-                    failed_docs.append((doc_id, content))
-                    print(f"  FAILED doc {doc_id} ({len(content)} chars, {len(chunks)} chunks all failed)")
-            else:
-                failed_docs.append((doc_id, content))
-                print(f"  FAILED doc {doc_id} ({len(content)} chars)")
-        else:
-            vectors.append(emb)
-            doc_ids.append(doc_id)
+    def embed_one(args):
+        i, doc_id, content = args
+        for server in SERVERS:
+            try:
+                r = requests.post(
+                    f"{server}/v1/embeddings",
+                    json={"input": content[:32000], "model": "harrier"},
+                    timeout=120,
+                )
+                r.raise_for_status()
+                return doc_id, r.json()["data"][0]["embedding"]
+            except Exception:
+                pass
+        # Try chunking with first chunk
+        chunks = chunk_text(content)
+        if len(chunks) > 1:
+            for server in SERVERS:
+                try:
+                    r = requests.post(
+                        f"{server}/v1/embeddings",
+                        json={"input": chunks[0][:32000], "model": "harrier"},
+                        timeout=120,
+                    )
+                    r.raise_for_status()
+                    return doc_id, r.json()["data"][0]["embedding"]
+                except Exception:
+                    pass
+        return doc_id, None
 
-        # Progress every 50 docs
-        if (i + 1) % 50 == 0 or i == total - 1:
-            elapsed = time.time() - migrate_index._start
-            rate = (i + 1) / elapsed if elapsed > 0 else 0
-            eta = (total - i - 1) / rate if rate > 0 else 0
-            print(f"  [{index_name}] {i+1}/{total} ({rate:.1f} docs/sec, ETA {eta/60:.0f}m)")
-
-    # Build FAISS index
-    if vectors:
-        vecs = np.array(vectors, dtype=np.float32)
-        faiss.normalize_L2(vecs)
-        idx = faiss.IndexFlatIP(NEW_DIM)
-        idx.add(vecs)
-    else:
-        idx = faiss.IndexFlatIP(NEW_DIM)
-
-    faiss.write_index(idx, str(FAISS_DIR / f"{index_name}.index"))
-
-    # Update faiss_id mapping — each doc_id gets the position of its first vector
+    # Create fresh index
+    idx = faiss.IndexFlatIP(NEW_DIM)
     cursor = db.cursor()
-    seen_docs = set()
-    for faiss_id, did in enumerate(doc_ids):
-        if did not in seen_docs:
-            cursor.execute("UPDATE documents SET faiss_id = ? WHERE id = ?", (faiss_id, did))
-            seen_docs.add(did)
+
+    # Process in batches — add to FAISS incrementally, then discard vectors
+    BATCH_SIZE = 4  # Conservative to avoid overloading single server
+    completed = 0
+    for batch_start in range(0, total, BATCH_SIZE):
+        batch = docs[batch_start : batch_start + BATCH_SIZE]
+        with ThreadPoolExecutor(max_workers=BATCH_SIZE) as pool:
+            futures = [
+                pool.submit(embed_one, (batch_start + j, doc_id, content))
+                for j, (doc_id, content) in enumerate(batch)
+            ]
+            for future in as_completed(futures):
+                doc_id, emb = future.result()
+                completed += 1
+                if emb is not None:
+                    vec = np.array([emb], dtype=np.float32)
+                    faiss.normalize_L2(vec)
+                    faiss_id = idx.ntotal
+                    idx.add(vec)
+                    cursor.execute("UPDATE documents SET faiss_id = ? WHERE id = ?", (faiss_id, doc_id))
+                else:
+                    failed_count += 1
+                    print(f"  FAILED doc {doc_id}")
+
+        # Progress + periodic commit + save
+        if completed % 50 == 0 or completed == total:
+            db.commit()
+            elapsed = time.time() - migrate_index._start
+            rate = completed / elapsed if elapsed > 0 else 0
+            eta = (total - completed) / rate if rate > 0 else 0
+            print(f"  [{index_name}] {completed}/{total} ({rate:.1f} docs/sec, ETA {eta/60:.1f}m)", flush=True)
+
+        # Save index every 500 docs as checkpoint
+        if completed % 500 == 0 and completed > 0:
+            faiss.write_index(idx, str(FAISS_DIR / f"{index_name}.index"))
+            db.commit()
+
+    # Final save
+    faiss.write_index(idx, str(FAISS_DIR / f"{index_name}.index"))
     db.commit()
 
-    print(f"  {index_name}: {idx.ntotal} vectors at {NEW_DIM}d ({len(failed_docs)} failed)")
-    return len(vectors), len(failed_docs)
+    print(f"  {index_name}: {idx.ntotal} vectors at {NEW_DIM}d ({failed_count} failed)")
+    return idx.ntotal, failed_count
 
 
 migrate_index._start = time.time()
@@ -161,20 +187,26 @@ migrate_index._start = time.time()
 def main():
     start = time.time()
     print(f"=== FAISS Migration: Nomic (768d) → Harrier-27B ({NEW_DIM}d) ===")
-    print(f"Server: {SERVER} (GPU 1 only)")
+    print(f"Servers: {SERVERS} (dual GPU)")
     print(f"Started: {datetime.now().isoformat()}")
     print()
 
-    # Verify server
-    try:
-        emb = get_embedding("test")
-        assert emb is not None and len(emb) == NEW_DIM
-        print(f"Server OK — dimension confirmed: {len(emb)}")
-    except Exception as e:
-        print(f"Server FAILED: {e}")
-        print("Start Harrier on GPU 1 first:")
-        print("  GGML_VK_VISIBLE_DEVICES=1 llama-server --model harrier-27b.gguf --port 9511 --embeddings ...")
-        return
+    # Verify servers
+    for s in SERVERS:
+        try:
+            r = requests.post(
+                f"{s}/v1/embeddings",
+                json={"input": "test", "model": "harrier"},
+                timeout=30,
+            )
+            r.raise_for_status()
+            emb = r.json()["data"][0]["embedding"]
+            assert len(emb) == NEW_DIM
+            print(f"  {s}: OK ({len(emb)}d)")
+        except Exception as e:
+            print(f"  {s}: FAILED — {e}")
+            print("Start Harrier on both GPUs first.")
+            return
 
     # Verify memory bridge is stopped
     import subprocess
