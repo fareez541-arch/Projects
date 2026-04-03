@@ -23,6 +23,13 @@ async def stripe_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         if not data or not data["email"]:
             raise HTTPException(status_code=400, detail="No customer email")
 
+        # Idempotency: reject duplicate events by checkout session ID
+        dup_check = await db.execute(
+            select(User).where(User.stripe_checkout_session_id == data["checkout_session_id"])
+        )
+        if dup_check.scalar_one_or_none():
+            return {"status": "duplicate_event_ignored"}
+
         # Check if user already exists
         result = await db.execute(select(User).where(User.email == data["email"]))
         existing = result.scalar_one_or_none()
