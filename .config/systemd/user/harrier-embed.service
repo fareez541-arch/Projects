@@ -1,0 +1,19 @@
+[Unit]
+Description=Harrier-27B Embedding Server (HIP, GPU 0, port 9510)
+After=network.target
+
+[Service]
+Type=simple
+Environment=HSA_OVERRIDE_GFX_VERSION=11.0.0
+Environment=HIP_VISIBLE_DEVICES=0
+ExecStart=/home/fareez541/llama/llama.cpp/build-hip-v3/bin/llama-server --model /home/fareez541/vllm_workspace/models/harrier-27b-gguf/harrier-oss-v1-27b-Q4_K_M.gguf --host 127.0.0.1 --port 9510 -ngl 999 --embeddings --threads 8 --parallel 4 --batch-size 8192 --ubatch-size 8192 --ctx-size 8192 --split-mode none --main-gpu 0
+Restart=on-failure
+RestartSec=10
+MemoryMax=22G
+OOMScoreAdjust=-500
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=harrier-embed
+
+[Install]
+WantedBy=default.target
