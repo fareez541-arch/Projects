@@ -32,9 +32,14 @@ async def register(request: Request, req: RegisterRequest, db: AsyncSession = De
     if user.account_status != "pending":
         raise HTTPException(status_code=400, detail="Account already activated")
 
-    # Validate device
+    # Validate device — composite fingerprint mixes client + server signals
+    server_fp = device_service.compute_server_fingerprint(
+        req.device_fingerprint,
+        request.headers.get("user-agent", ""),
+        request.headers.get("cf-connecting-ip", request.client.host if request.client else ""),
+    )
     allowed, updated_slots, err = device_service.validate_device(
-        user.device_slots or [], req.device_fingerprint
+        user.device_slots or [], server_fp
     )
     if not allowed:
         raise HTTPException(status_code=403, detail=err)
@@ -104,9 +109,14 @@ async def login(request: Request, req: LoginRequest, db: AsyncSession = Depends(
         await db.commit()
         raise HTTPException(status_code=403, detail="Account expired")
 
-    # Device check
+    # Device check — composite fingerprint mixes client + server signals
+    server_fp = device_service.compute_server_fingerprint(
+        req.device_fingerprint,
+        request.headers.get("user-agent", ""),
+        request.headers.get("cf-connecting-ip", request.client.host if request.client else ""),
+    )
     allowed, updated_slots, err = device_service.validate_device(
-        user.device_slots or [], req.device_fingerprint
+        user.device_slots or [], server_fp
     )
     if not allowed:
         raise HTTPException(status_code=403, detail=err)
