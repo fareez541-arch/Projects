@@ -271,8 +271,12 @@ class FAISSIndexManager:
 
         index_path = FAISS_DIR / f"{name}.index"
         if index_path.exists():
-            logger.info("Loading FAISS index: %s (%s)", name, index_path)
-            idx = faiss.read_index(str(index_path))
+            try:
+                logger.info("Loading FAISS index: %s (%s)", name, index_path)
+                idx = faiss.read_index(str(index_path))
+            except Exception as e:
+                logger.error("Corrupt FAISS index %s, creating fresh: %s", name, e)
+                idx = faiss.IndexFlatIP(VECTOR_DIM)
         else:
             logger.info("Creating new FAISS index: %s (dim=%d)", name, VECTOR_DIM)
             idx = faiss.IndexFlatIP(VECTOR_DIM)  # Inner product (cosine on normalized vecs)
@@ -906,33 +910,38 @@ async def api_propagate_delete(request: PropagateDeleteRequest):
     Deletes metadata rows and logs removed FAISS IDs (orphaned vectors
     are cleaned on next /rebuild).
     """
-    conn_meta = sqlite3.connect(str(METADATA_DB))
-    conn_meta.execute("PRAGMA busy_timeout=5000")
-    deleted = 0
-    removed_faiss_ids: list[tuple[str, int]] = []
+    def _do_delete(req: PropagateDeleteRequest):
+        conn_meta = sqlite3.connect(str(METADATA_DB))
+        conn_meta.execute("PRAGMA busy_timeout=5000")
+        deleted = 0
+        removed_faiss_ids: list[tuple[str, int]] = []
 
-    if request.doc_id:
-        row = conn_meta.execute(
-            "SELECT id, index_name, faiss_id FROM documents WHERE id = ?",
-            (request.doc_id,),
-        ).fetchone()
-        if row:
-            conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
-            removed_faiss_ids.append((row[1], row[2]))
-            deleted += 1
+        if req.doc_id:
+            row = conn_meta.execute(
+                "SELECT id, index_name, faiss_id FROM documents WHERE id = ?",
+                (req.doc_id,),
+            ).fetchone()
+            if row:
+                conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
+                removed_faiss_ids.append((row[1], row[2]))
+                deleted += 1
 
-    if request.content_hash:
-        rows = conn_meta.execute(
-            "SELECT id, index_name, faiss_id FROM documents WHERE content_hash = ?",
-            (request.content_hash,),
-        ).fetchall()
-        for row in rows:
-            conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
-            removed_faiss_ids.append((row[1], row[2]))
-            deleted += 1
+        if req.content_hash:
+            rows = conn_meta.execute(
+                "SELECT id, index_name, faiss_id FROM documents WHERE content_hash = ?",
+                (req.content_hash,),
+            ).fetchall()
+            for row in rows:
+                conn_meta.execute("DELETE FROM documents WHERE id = ?", (row[0],))
+                removed_faiss_ids.append((row[1], row[2]))
+                deleted += 1
 
-    conn_meta.commit()
-    conn_meta.close()
+        conn_meta.commit()
+        conn_meta.close()
+        return deleted, removed_faiss_ids
+
+    import asyncio
+    deleted, removed_faiss_ids = await asyncio.to_thread(_do_delete, request)
 
     if deleted > 0:
         logger.info(

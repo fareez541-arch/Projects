@@ -118,7 +118,7 @@ def get_latest_turn(agent: str) -> dict | None:
     # Find the main session
     session_info = None
     for key, info in sessions.items():
-        if ":main" in key or ":cron" not in key:
+        if key.endswith(":main"):
             session_info = info
             break
 
