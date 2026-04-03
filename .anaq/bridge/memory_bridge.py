@@ -408,7 +408,7 @@ class BatchIngestRequest(BaseModel):
 
 
 class EmbeddingRequest(BaseModel):
-    model: str = "nomic-ai/nomic-embed-text-v1.5"
+    model: str = "harrier-27b"
     input: str | list[str]
 
 
@@ -451,7 +451,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:5000", "http://localhost:5000", "http://127.0.0.1:18789", "http://localhost:18789"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -652,7 +652,7 @@ async def openai_embeddings(request: EmbeddingRequest):
 async def list_models():
     return {
         "data": [
-            {"id": "nomic-ai/nomic-embed-text-v1.5", "object": "model", "owned_by": "nomic-ai"}
+            {"id": "harrier-27b", "object": "model", "owned_by": "nomic-ai"}
         ]
     }
 
