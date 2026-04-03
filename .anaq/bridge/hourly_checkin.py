@@ -60,17 +60,24 @@ CLAUDE_BIN = os.environ.get("CLAUDE_BIN", str(Path.home() / ".local" / "bin" / "
 # Telegram send
 # ---------------------------------------------------------------------------
 
-def tg_send(text: str) -> bool:
+def _escape_html(text: str) -> str:
+    """Escape HTML special characters for Telegram HTML parse_mode."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+def tg_send(text: str, parse_mode: str = "HTML") -> bool:
     """Send message via Telegram Main bot."""
     MAX_LEN = 4096
     chunks = [text[i:i + MAX_LEN] for i in range(0, len(text), MAX_LEN)]
     success = True
     for chunk in chunks:
-        data = json.dumps({
+        payload = {
             "chat_id": TG_CHAT_ID,
             "text": chunk,
-            "parse_mode": "Markdown",
-        }).encode("utf-8")
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        data = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
             f"{TG_API}/sendMessage",
             data=data,
@@ -186,49 +193,51 @@ def build_checkin() -> str:
     state = load_state()
     git = git_summary()
 
+    esc = _escape_html
+
     lines = [
-        f"*Hourly Check-In — {hour} ET*",
+        f"<b>Hourly Check-In — {esc(hour)} ET</b>",
         f"Check-in #{state['checkin_count'] + 1}",
         "",
     ]
 
     # Active work
     if tasks["active"]:
-        lines.append("*Active:*")
+        lines.append("<b>Active:</b>")
         for t in tasks["active"]:
-            lines.append(f"  - {t}")
+            lines.append(f"  - {esc(t)}")
         lines.append("")
 
     # Blocked / needs input
     if tasks["blocked"]:
-        lines.append("*BLOCKED (need your input):*")
+        lines.append("<b>BLOCKED (need your input):</b>")
         for t in tasks["blocked"]:
-            lines.append(f"  - {t}")
+            lines.append(f"  - {esc(t)}")
         lines.append("")
 
     # Pending permissions
     if state.get("pending_permissions"):
-        lines.append("*Permissions needed:*")
+        lines.append("<b>Permissions needed:</b>")
         for p in state["pending_permissions"]:
-            lines.append(f"  - {p}")
+            lines.append(f"  - {esc(p)}")
         lines.append("")
 
     # Next up
     if tasks["pending"]:
         next_task = tasks["pending"][0]
-        lines.append(f"*Next up:* {next_task}")
+        lines.append(f"<b>Next up:</b> {esc(next_task)}")
         lines.append("")
 
     # Recent git
     if git and git != "(no git activity)":
-        lines.append("*Recent commits:*")
-        lines.append(f"```\n{git}\n```")
+        lines.append("<b>Recent commits:</b>")
+        lines.append(f"<pre>{esc(git)}</pre>")
         lines.append("")
 
     # Stats
     total = len(tasks["active"]) + len(tasks["pending"]) + len(tasks["blocked"])
     done = len(tasks["done"])
-    lines.append(f"_{done} done / {total} remaining_")
+    lines.append(f"<i>{done} done / {total} remaining</i>")
     lines.append("")
     lines.append("Reply here to update tasks or give instructions.")
 
@@ -407,7 +416,7 @@ def forward_to_a0(message: str):
         with urllib.request.urlopen(req, timeout=300) as resp:
             result = json.loads(resp.read())
             reply = result.get("response", "(no response)")
-            tg_send(f"*A0:* {reply[:3000]}")
+            tg_send(f"<b>A0:</b> {_escape_html(reply[:3000])}")
     except Exception as e:
         log(f"A0 forward failed: {e}")
         tg_send(f"Could not process via A0: {e}")
