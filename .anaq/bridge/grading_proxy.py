@@ -19,6 +19,7 @@ import os
 import re
 import string
 import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
@@ -43,6 +44,10 @@ PROXY_PORT = int(os.environ.get("PROXY_PORT", "8001"))
 GRADE_MODEL = "claude-sonnet-4-6"
 GRADE_THRESHOLD = 75
 MAX_RETRIES = 2  # 0-indexed: attempts 0, 1, 2 = 3 total
+
+# Track ungraded pass-throughs for monitoring (thread-safe)
+_ungraded_lock = threading.Lock()
+_ungraded_passthrough_total: int = 0
 
 OC_HOME = Path.home() / ".openclaw"
 ANAQ_HOME = Path.home() / ".anaq"
@@ -693,6 +698,7 @@ async def health():
         "backend": LLAMA_SERVER_URL,
         "threshold": GRADE_THRESHOLD,
         "active_sessions": len(_retry_state),
+        "ungraded_passthroughs": _ungraded_passthrough_total,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -789,15 +795,28 @@ async def chat_completions(request: Request):
         grade_elapsed = time.time() - t0
 
         if grade_result is None:
-            # Grading failed — let the response through (fail open)
-            logger.warning("GRADE FAILED (%.1fs) — passing through for %s", grade_elapsed, agent)
+            # Grading failed — pass through BUT track it for monitoring
+            global _ungraded_passthrough_total
+            with _ungraded_lock:
+                _ungraded_passthrough_total += 1
+                current_total = _ungraded_passthrough_total
+            logger.error(
+                "UNGRADED PASSTHROUGH #%d agent=%s elapsed=%.1fs — grading LLM unreachable, response passed without quality gate",
+                current_total, agent, grade_elapsed,
+            )
+            if current_total % 10 == 0:
+                logger.critical(
+                    "HIGH UNGRADED RATE: %d responses passed without quality gate — grading system may be offline",
+                    current_total,
+                )
             if wants_stream:
                 return StreamingResponse(
                     _restream_buffered_chunks(raw_chunks),
                     media_type="text/event-stream",
-                    headers=_sse_headers(),
+                    headers={**_sse_headers(), "X-Grading-Status": "ungraded"},
                 )
-            return JSONResponse(content=_make_non_stream_response(assistant_text, model=model_name))
+            resp_data = _make_non_stream_response(assistant_text, model=model_name)
+            return JSONResponse(content=resp_data, headers={"X-Grading-Status": "ungraded"})
 
         score = grade_result.get("score", 0)
         approved = score >= GRADE_THRESHOLD
